@@ -16,16 +16,6 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
-      - name: DNS and network test
-        run: |
-          echo "=== DNS test ==="
-          host rpwuykdoiippzfuhmpch.supabase.co || nslookup rpwuykdoiippzfuhmpch.supabase.co || dig rpwuykdoiippzfuhmpch.supabase.co || echo "DNS FAILED"
-          echo "=== Curl test ==="
-          curl -s -o /dev/null -w "HTTP %{http_code}" https://rpwuykdoiippzfuhmpch.supabase.co/rest/v1/ || echo "Curl failed"
-          echo ""
-          echo "=== Ping test ==="
-          ping -c 2 rpwuykdoiippzfuhmpch.supabase.co || echo "Ping failed"
-
       - name: Install dependencies
         run: pip install -r backend/requirements.txt
 

@@ -7,6 +7,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# GitHub Actions修复: httpx HTTP/2在某些runner上DNS失败,全局禁用HTTP/2
+import httpx
+_original_client_init = httpx.Client.__init__
+def _patched_init(self, *args, **kwargs):
+    kwargs.setdefault("http2", False)
+    _original_client_init(self, *args, **kwargs)
+httpx.Client.__init__ = _patched_init
+
 # Supabase
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")  # service_role key for backend

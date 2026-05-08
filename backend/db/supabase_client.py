@@ -1,5 +1,5 @@
 """
-Supabase客户端 — 单例模式，带调试
+Supabase客户端 — 单例模式
 """
 import logging
 from supabase import create_client, Client
@@ -12,26 +12,14 @@ _client: Client | None = None
 def get_client() -> Client:
     global _client
     if _client is None:
-        import httpx
-        # 调试：先用httpx直接测试连通性
-        try:
-            test_resp = httpx.get(
-                SUPABASE_URL + "/rest/v1/",
-                headers={"apikey": SUPABASE_KEY},
-                timeout=10,
-            )
-            logger.info(f"Supabase direct httpx test: HTTP {test_resp.status_code}")
-        except Exception as e:
-            logger.error(f"Supabase direct httpx FAILED: {e}")
-            logger.error(f"URL used: '{SUPABASE_URL}'")
-
-        logger.info(f"Initializing Supabase client: URL prefix={SUPABASE_URL[:35]}... len={len(SUPABASE_URL)}")
-        _client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        url = SUPABASE_URL.strip()
+        key = SUPABASE_KEY.strip()
+        logger.info(f"Supabase init: {url[:35]}...")
+        _client = create_client(url, key)
     return _client
 
 
 def insert_post(post_data: dict) -> str | None:
-    """插入帖子，去重检查后返回id"""
     client = get_client()
     existing = (
         client.table("posts")
@@ -47,7 +35,6 @@ def insert_post(post_data: dict) -> str | None:
 
 
 def link_post_to_company(post_id: str, company_id: str, score: float, keywords: list[str]):
-    """建立帖子与A股公司的关联"""
     get_client().table("post_companies").upsert({
         "post_id": post_id,
         "company_id": company_id,
@@ -57,7 +44,6 @@ def link_post_to_company(post_id: str, company_id: str, score: float, keywords: 
 
 
 def upsert_material_price(material_id: str, price: float, change_pct: float, change_7d: float = 0):
-    """写入原材料价格"""
     get_client().table("material_prices").insert({
         "material_id": material_id,
         "price": price,
@@ -67,6 +53,5 @@ def upsert_material_price(material_id: str, price: float, change_pct: float, cha
 
 
 def get_active_alerts() -> list[dict]:
-    """获取所有启用的预警规则"""
     result = get_client().table("alerts").select("*").eq("enabled", True).execute()
     return result.data
