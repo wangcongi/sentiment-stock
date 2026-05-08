@@ -144,12 +144,105 @@ def run_material_crawl():
     logger.info(f"=== Material crawl done. Updated {len(prices)} items ===")
 
 
+def run_test():
+    """测试模式：用一条模拟帖子验证全链路"""
+    import asyncio
+    from datetime import datetime, timezone
+    from nlp.entity_extract import process_post
+    from nlp.sentiment import analyze as sentiment_analyze
+    from nlp.llm_analyzer import analyze_with_llm, merge_with_rules
+    from db.supabase_client import insert_post, link_post_to_company, get_client
+
+    logger.info("=== TEST MODE ===")
+
+    test_post = {
+        "handle": "elonmusk",
+        "content": "Tesla FSD will be approved in China next month. This is huge for EV industry. $TSLA",
+        "original_url": "https://x.com/elonmusk/status/test",
+        "posted_at": datetime.now(timezone.utc).isoformat(),
+        "platform": "x",
+        "likes": 5000,
+        "shares": 1200,
+        "comments": 800,
+    }
+
+    celeb_result = (
+        get_client().table("celebrities").select("id,name").eq("handle", "elonmusk").execute()
+    )
+    if not celeb_result.data:
+        logger.error("Celebrity not found in DB!")
+        return
+    celeb_id = celeb_result.data[0]["id"]
+    celeb_name = celeb_result.data[0]["name"]
+    logger.info(f"Testing with celebrity: {celeb_name}")
+
+    # 规则匹配
+    processed = process_post(test_post)
+    sentiment = sentiment_analyze(test_post["content"])
+
+    # LLM分析
+    llm_result = None
+    if os.getenv("LLM_ENABLED", "true").lower() == "true":
+        try:
+            llm_result = asyncio.run(
+                analyze_with_llm(test_post["content"], test_post["handle"], test_post["platform"])
+            )
+            logger.info(f"LLM result: {llm_result}")
+        except Exception as e:
+            logger.warning(f"LLM failed: {e}")
+
+    merged = merge_with_rules(llm_result, {
+        "sentiment": sentiment,
+        "linked_companies": processed.get("linked_companies", []),
+    })
+
+    # 写入
+    post_id = insert_post({
+        "celebrity_id": celeb_id,
+        "content": test_post["content"],
+        "platform": test_post["platform"],
+        "original_url": test_post["original_url"],
+        "posted_at": test_post["posted_at"],
+        "likes": test_post["likes"],
+        "shares": test_post["shares"],
+        "comments": test_post["comments"],
+        "heat_score": processed["heat_score"],
+        "sentiment": merged.get("sentiment", sentiment),
+    })
+
+    if not post_id:
+        logger.error("Insert failed! Check Supabase connection.")
+        return
+
+    logger.info(f"Test post inserted: {post_id}")
+
+    # LLM公司关联
+    for comp in merged.get("affected_companies", []):
+        code = comp.get("code", "")
+        result = get_client().table("companies").select("id").eq("code", code).execute()
+        if result.data:
+            link_post_to_company(post_id, result.data[0]["id"],
+                                 comp.get("relevance", 0.5), [comp.get("reason", "")])
+            logger.info(f"  Linked: {comp.get('name')} ({code})")
+
+    # 规则公司关联
+    for comp, score, keywords in processed.get("linked_companies", []):
+        already = any(comp.get("id") == c.get("code") for c in merged.get("affected_companies", []))
+        if not already:
+            link_post_to_company(post_id, comp["id"], score, keywords)
+            logger.info(f"  Linked (rule): id={comp['id']} ({comp.get('name','')})")
+
+    logger.info("=== TEST DONE ===")
+
+
 if __name__ == "__main__":
     task = sys.argv[1] if len(sys.argv) > 1 else "posts"
     if task == "posts":
         run_post_crawl()
     elif task == "materials":
         run_material_crawl()
+    elif task == "test":
+        run_test()
     else:
         print(f"Unknown task: {task}")
         sys.exit(1)

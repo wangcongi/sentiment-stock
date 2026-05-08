@@ -1,62 +1,105 @@
 """
-X平台爬虫 — 通过Nitter RSS获取公开推文
+X平台爬虫 — 多源fallback
 """
 import logging
 import httpx
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone
-from config import TRACKED_ACCOUNTS_X, NITTER_INSTANCES
+from config import TRACKED_ACCOUNTS_X
 
 logger = logging.getLogger(__name__)
 
+# 数据源列表 — 按优先级降序
+RSS_SOURCES = [
+    "https://xcancel.com",           # Nitter继任者
+    "https://rsshub.app/twitter",    # RSSHub公共实例
+    "https://nitter.poast.org",      # 替代实例
+    "https://nitter.1d4.us",         # 替代实例
+]
 
-def fetch_tweets_nitter(handle: str, limit: int = 10) -> list[dict]:
-    """
-    通过Nitter RSS获取用户最新推文
-    Nitter是Twitter的隐私友好前端，提供RSS feed
-    """
+
+def _try_rss(instance: str, handle: str, limit: int) -> list[dict]:
+    """尝试从单个RSS源获取推文"""
+    url = f"{instance}/{handle}/rss"
+    resp = httpx.get(url, timeout=20, follow_redirects=True,
+                     headers={"User-Agent": "Mozilla/5.0 (compatible; SentimentBot/1.0)"})
+    if resp.status_code != 200:
+        return []
+
+    soup = BeautifulSoup(resp.text, "xml")
     tweets = []
-    for instance in NITTER_INSTANCES:
-        try:
-            resp = httpx.get(
-                f"{instance}/{handle}/rss",
-                timeout=15,
-                follow_redirects=True,
-            )
-            if resp.status_code != 200:
-                continue
-
-            soup = BeautifulSoup(resp.text, "xml")
-            for item in soup.find_all("item")[:limit]:
-                tweets.append({
-                    "handle": handle,
-                    "content": item.find("title").get_text(strip=True) if item.find("title") else "",
-                    "original_url": item.find("link").get_text(strip=True) if item.find("link") else "",
-                    "posted_at": item.find("pubDate").get_text(strip=True) if item.find("pubDate") else None,
-                    "platform": "x",
-                })
-            break  # 成功则跳出实例轮询
-        except Exception as e:
-            logger.warning(f"Nitter {instance} failed for {handle}: {e}")
-            continue
-
+    for item in soup.find_all("item")[:limit]:
+        title = item.find("title")
+        link = item.find("link")
+        pub_date = item.find("pubDate")
+        tweets.append({
+            "handle": handle,
+            "content": title.get_text(strip=True) if title else "",
+            "original_url": link.get_text(strip=True) if link else "",
+            "posted_at": pub_date.get_text(strip=True) if pub_date else None,
+            "platform": "x",
+        })
     return tweets
 
 
-def parse_twitter_date(date_str: str) -> datetime:
-    """解析Twitter日期格式 → UTC datetime"""
-    from email.utils import parsedate_to_datetime
-    return parsedate_to_datetime(date_str).astimezone(timezone.utc)
+def _try_rsshub(handle: str, limit: int) -> list[dict]:
+    """RSSHub 特殊路径"""
+    resp = httpx.get(f"https://rsshub.app/twitter/user/{handle}",
+                     timeout=20, follow_redirects=True,
+                     headers={"User-Agent": "Mozilla/5.0"})
+    if resp.status_code != 200:
+        return []
+
+    soup = BeautifulSoup(resp.text, "xml")
+    tweets = []
+    for item in soup.find_all("item")[:limit]:
+        title = item.find("title")
+        link = item.find("link")
+        pub_date = item.find("pubDate")
+        tweets.append({
+            "handle": handle,
+            "content": title.get_text(strip=True) if title else "",
+            "original_url": link.get_text(strip=True) if link else "",
+            "posted_at": pub_date.get_text(strip=True) if pub_date else None,
+            "platform": "x",
+        })
+    return tweets
+
+
+def fetch_tweets(handle: str, limit: int = 10) -> list[dict]:
+    """多源尝试获取推文"""
+    # 先试RSSHub
+    try:
+        tweets = _try_rsshub(handle, limit)
+        if tweets:
+            logger.info(f"RSSHub OK for {handle}: {len(tweets)} tweets")
+            return tweets
+    except Exception as e:
+        logger.debug(f"RSSHub failed: {e}")
+
+    # 再试各RSS镜像
+    for instance in RSS_SOURCES:
+        try:
+            tweets = _try_rss(instance, handle, limit)
+            if tweets:
+                logger.info(f"{instance} OK for {handle}: {len(tweets)} tweets")
+                return tweets
+        except Exception as e:
+            logger.debug(f"{instance} failed for {handle}: {e}")
+            continue
+
+    logger.warning(f"All sources failed for @{handle}")
+    return []
 
 
 def crawl_all():
-    """爬取所有关注账号的最新推文"""
+    """爬取所有关注账号"""
     all_tweets = []
     for handle in TRACKED_ACCOUNTS_X:
         try:
-            tweets = fetch_tweets_nitter(handle)
+            tweets = fetch_tweets(handle)
             all_tweets.extend(tweets)
-            logger.info(f"Fetched {len(tweets)} tweets from @{handle}")
         except Exception as e:
-            logger.error(f"Failed to crawl @{handle}: {e}")
+            logger.error(f"Crawl failed for @{handle}: {e}")
+    logger.info(f"X crawl done: {len(all_tweets)} tweets total")
     return all_tweets
