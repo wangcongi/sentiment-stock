@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.env
+*.egg-info/
+
+# Flutter
+.dart_tool/
+build/
+*.iml
+.idea/
+.metadata
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+google-services.json
+GoogleService-Info.plist
+firebase-credentials.json

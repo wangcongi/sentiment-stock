@@ -1,0 +1,30 @@
+name: 爬取名人帖子
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # 每15分钟
+  workflow_dispatch:          # 允许手动触发
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run post crawler
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          LLM_ENABLED: ${{ secrets.LLM_ENABLED }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: python backend/run_once.py posts
