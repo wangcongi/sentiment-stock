@@ -1,15 +1,31 @@
 """
-Supabase客户端 — 单例模式
+Supabase客户端 — 单例模式，带调试
 """
+import logging
 from supabase import create_client, Client
 from config import SUPABASE_URL, SUPABASE_KEY
 
+logger = logging.getLogger(__name__)
 _client: Client | None = None
 
 
 def get_client() -> Client:
     global _client
     if _client is None:
+        import httpx
+        # 调试：先用httpx直接测试连通性
+        try:
+            test_resp = httpx.get(
+                SUPABASE_URL + "/rest/v1/",
+                headers={"apikey": SUPABASE_KEY},
+                timeout=10,
+            )
+            logger.info(f"Supabase direct httpx test: HTTP {test_resp.status_code}")
+        except Exception as e:
+            logger.error(f"Supabase direct httpx FAILED: {e}")
+            logger.error(f"URL used: '{SUPABASE_URL}'")
+
+        logger.info(f"Initializing Supabase client: URL prefix={SUPABASE_URL[:35]}... len={len(SUPABASE_URL)}")
         _client = create_client(SUPABASE_URL, SUPABASE_KEY)
     return _client
 
