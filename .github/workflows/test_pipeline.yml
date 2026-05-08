@@ -16,13 +16,21 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
+      - name: DNS and network test
+        run: |
+          echo "=== DNS test ==="
+          host rpwuykdoiippzfuhmpch.supabase.co || nslookup rpwuykdoiippzfuhmpch.supabase.co || dig rpwuykdoiippzfuhmpch.supabase.co || echo "DNS FAILED"
+          echo "=== Curl test ==="
+          curl -s -o /dev/null -w "HTTP %{http_code}" https://rpwuykdoiippzfuhmpch.supabase.co/rest/v1/ || echo "Curl failed"
+          echo ""
+          echo "=== Ping test ==="
+          ping -c 2 rpwuykdoiippzfuhmpch.supabase.co || echo "Ping failed"
+
       - name: Install dependencies
         run: pip install -r backend/requirements.txt
 
       - name: Run test pipeline
-        run: |
-          echo "SUPABASE_URL length: ${#SUPABASE_URL}"
-          python backend/run_once.py test
+        run: python backend/run_once.py test
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
