@@ -6,9 +6,16 @@ import os
 import sys
 import logging
 
-# 从 GitHub Secrets 注入环境变量
-os.environ.setdefault("SUPABASE_URL", os.getenv("SUPABASE_URL", ""))
-os.environ.setdefault("SUPABASE_KEY", os.getenv("SUPABASE_KEY", ""))
+# GitHub Actions通过env块注入，本地通过.env文件
+# 验证关键变量
+_SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+_SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+
+if not _SUPABASE_URL:
+    print("ERROR: SUPABASE_URL not set! Check GitHub Secrets or .env file.")
+    print("Available env vars:", [k for k in os.environ if any(x in k.upper() for x in ['SUPABASE', 'SUPA', 'KEY', 'DEEPSEEK'])])
+    sys.exit(1)
+
 os.environ.setdefault("LLM_ENABLED", os.getenv("LLM_ENABLED", "true"))
 os.environ.setdefault("DEEPSEEK_API_KEY", os.getenv("DEEPSEEK_API_KEY", ""))
 os.environ.setdefault("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
@@ -146,6 +153,16 @@ def run_material_crawl():
 
 def run_test():
     """测试模式：用一条模拟帖子验证全链路"""
+    import traceback
+    try:
+        _run_test_impl()
+    except Exception as e:
+        logger.error(f"TEST FAILED: {e}")
+        traceback.print_exc()
+        sys.exit(1)
+
+
+def _run_test_impl():
     import asyncio
     from datetime import datetime, timezone
     from nlp.entity_extract import process_post
