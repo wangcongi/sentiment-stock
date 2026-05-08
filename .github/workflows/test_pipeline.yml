@@ -20,9 +20,11 @@ jobs:
         run: pip install -r backend/requirements.txt
 
       - name: Run test pipeline
+        run: |
+          echo "SUPABASE_URL length: ${#SUPABASE_URL}"
+          python backend/run_once.py test
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           LLM_ENABLED: ${{ secrets.LLM_ENABLED }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-        run: python backend/run_once.py test
